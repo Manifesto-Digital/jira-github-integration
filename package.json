@@ -1,0 +1,46 @@
+{
+  "name": "jira-github-integration",
+  "version": "1.0.0",
+  "description": "A comprehensive integration system that synchronizes issues, pull requests, and automation between Atlassian Jira and GitHub with AC-driven development",
+  "main": "dist/app.js",
+  "scripts": {
+    "start": "tsx src/app.ts",
+    "build": "tsc",
+    "test": "jest",
+    "get-ticket": "tsx scripts/get-ticket.ts",
+    "jira-to-pr": "tsx scripts/jira-to-pr.ts",
+    "jira-to-issue": "tsx scripts/jira-to-github-issue.ts"
+  },
+  "keywords": [
+    "jira",
+    "github",
+    "integration",
+    "webhooks",
+    "automation",
+    "acceptance-criteria",
+    "copilot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/rest": "^20.0.2",
+    "axios": "^1.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0",
+    "eslint": "^8.54.0",
+    "nodemon": "^3.0.2",
+    "prettier": "^3.1.0",
+    "ts-node": "^10.9.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
