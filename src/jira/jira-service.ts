@@ -78,11 +78,11 @@ export class JiraService {
       // Get attachments (especially design files)
       mappedIssue.attachments = await this.getIssueAttachments(issueKey);
       
-      console.log(`📋 Retrieved Jira issue ${issueKey}:`);
-      console.log(`   - Description: ${mappedIssue.description ? 'Present' : 'Missing'}`);
-      console.log(`   - Attachments: ${mappedIssue.attachments.length} files`);
-      console.log(`   - Design files: ${mappedIssue.attachments.filter(a => a.isDesign).length}`);
-      
+      console.log(`Retrieved Jira issue ${issueKey}:`);
+      console.log(`- Description: ${mappedIssue.description ? 'Present' : 'Missing'}`);
+      console.log(`- Attachments: ${mappedIssue.attachments.length} files`);
+      console.log(`- Design files: ${mappedIssue.attachments.filter(a => a.isDesign).length}`);
+
       return mappedIssue;
     } catch (error) {
       throw new Error(`Failed to fetch Jira issue ${issueKey}: ${(error as Error).message}`);
@@ -128,8 +128,8 @@ export class JiraService {
    */
   async getAcceptanceCriteria(issue: JiraIssue, issueKey: string): Promise<AcceptanceCriteria[]> {
     const criteria: AcceptanceCriteria[] = [];
-    console.log(issue, "issue in getAcceptanceCriteria");
-    // Parse AC from description
+
+    // Parse AC from description, each User Story should start in a new paragraph
     if (issue.description) {
       const acMatches = issue.description.match(/(?:AC|Acceptance Criteria?|Given.*When.*Then)/gi);
       if (acMatches) {
@@ -167,7 +167,7 @@ export class JiraService {
       // Look for GIVEN at the start of a paragraph (case insensitive)
       if (/^\s*GIVEN/i.test(paragraph)) {
         // Try to extract a complete GWT from this paragraph
-        const gwtMatch = paragraph.match(/GIVEN\s+(.+?)\s+WHEN\s+(.+?)\s+THEN\s+(.+?)(?:\s*$|\n)/is);
+        const gwtMatch = paragraph.match(/GIVEN\s+(.+?)\s+WHEN\s+(.+?)\s+THEN\s+(.+?)(?:\s*$|\n)/gi);
         
         if (gwtMatch) {
           criteria.push({

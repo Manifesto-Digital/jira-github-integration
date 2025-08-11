@@ -4,7 +4,7 @@
  * Simple Jira Ticket Reader
  * 
  * Usage:
- * npm run get-ticket JGIT-1 nataliarusu/jira-github-integration
+ * npm run get-ticket JGIT-1 Manifesto-Digital/repo-name
  * 
  * What it does:
  * 1. Reads Jira ticket information
@@ -13,7 +13,7 @@
  * 4. Provides next steps for implementation
  */
 
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 import { JiraService } from '../src/jira/jira-service.js';
 import { GitHubService } from '../src/github/github-service.js';
 import * as readline from 'readline';
@@ -201,7 +201,7 @@ if (require.main === module) {
 Usage: npm run get-ticket <TICKET_KEY> <OWNER/REPO>
 
 Examples:
-  npm run get-ticket JGIT-1 nataliarusu/a11y
+  npm run get-ticket JGIT-1 Manifesto-Digital/repo-name
   npm run get-ticket PROJ-123 myorg/myproject
   
 Environment Variables Required:

@@ -1,4 +1,5 @@
-import { Octokit } from '@octokit/rest';
+import { GitHubClient } from './githubClient';
+import { assignCopilotAgentToIssueQuery, getCopilotAgentIdQuery, getIssueIdQuery } from './gql-queries';
 
 export interface GitHubConfig {
   token: string;
@@ -7,6 +8,8 @@ export interface GitHubConfig {
 }
 
 export interface GitHubIssue {
+  id: string;
+  issue_id: string;
   number: number;
   title: string;
   body?: string;
@@ -31,14 +34,45 @@ export interface PullRequest {
  * Handles issue creation, PR management, and repository operations
  */
 export class GitHubService {
-  private octokit: Octokit;
+  private client: GitHubClient;
   private config: GitHubConfig;
 
   constructor(config: GitHubConfig) {
     this.config = config;
-    this.octokit = new Octokit({
-      auth: config.token
-    });
+    this.client = new GitHubClient(config.token);
+  }
+
+  private async getCopilotAgentId(owner: string, repo: string): Promise<string | null> {
+    const query = getCopilotAgentIdQuery(owner, repo);
+    try {
+      const response = await this.client.graphql<{ repository: { suggestedActors: { nodes: Array<{ id: string }> } } }>({
+        query,
+      });
+
+      return response.repository.suggestedActors.nodes[0]?.id || null;
+    } catch (error) {
+      console.error(`Failed to get Copilot agent ID: ${(error as Error).message}`);
+      return null;
+    }
+  }
+  
+  private async getIssueId(owner: string, repoName: string, issueNumber: number): Promise<string | null> {
+    const query = getIssueIdQuery(owner, repoName, issueNumber);
+    try {
+      const response = await this.client.graphql<{
+        repository: {
+          issue: {
+            id: string;
+          };
+        };
+      }>({
+        query,
+      });
+      return response.repository.issue.id || null;
+    } catch (error) {
+      console.error(`Failed to get issue ID: ${(error as Error).message}`);
+      return null;
+    }
   }
 
   /**
@@ -48,22 +82,26 @@ export class GitHubService {
    * @param issue - Issue data
    * @returns Promise<GitHubIssue>
    */
-  async createIssue(owner: string, repo: string, issue: {
-    title: string;
-    body?: string;
-    labels?: string[];
-    assignees?: string[];
-    milestone?: number;
-  }): Promise<GitHubIssue> {
+  async createIssue(
+    owner: string,
+    repo: string,
+    issue: {
+      title: string;
+      body?: string;
+      labels?: string[];
+      assignees?: string[];
+      milestone?: number;
+    },
+  ): Promise<GitHubIssue> {
     try {
-      const response = await this.octokit.rest.issues.create({
+      const response = await this.client.rest.issues.create({
         owner,
         repo,
         title: issue.title,
         body: issue.body,
         labels: issue.labels,
         assignees: issue.assignees,
-        milestone: issue.milestone
+        milestone: issue.milestone,
       });
 
       return this.mapGitHubIssue(response.data);
@@ -72,142 +110,38 @@ export class GitHubService {
     }
   }
 
-  /**
+    /**
    * Update an existing GitHub issue
    * @param owner - Repository owner
    * @param repo - Repository name
    * @param issueNumber - Issue number
    * @param update - Update data
    */
-  async updateIssue(owner: string, repo: string, issueNumber: number, update: {
-    title?: string;
-    body?: string;
-    state?: 'open' | 'closed';
-    labels?: string[];
-  }): Promise<GitHubIssue> {
+  async updateIssue(
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    update: {
+      title?: string;
+      body?: string;
+      state?: 'open' | 'closed';
+      labels?: string[];
+    },
+  ): Promise<GitHubIssue> {
     try {
-      const response = await this.octokit.rest.issues.update({
+      const response = await this.client.rest.issues.update({
         owner,
         repo,
         issue_number: issueNumber,
         title: update.title,
         body: update.body,
         state: update.state,
-        labels: update.labels
+        labels: update.labels,
       });
 
       return this.mapGitHubIssue(response.data);
     } catch (error) {
       throw new Error(`Failed to update GitHub issue: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Create a pull request based on acceptance criteria
-   * @param owner - Repository owner
-   * @param repo - Repository name
-   * @param pr - Pull request data
-   * @returns Promise<PullRequest>
-   */
-  async createPullRequest(owner: string, repo: string, pr: {
-    title: string;
-    body?: string;
-    head: string;
-    base: string;
-    draft?: boolean;
-  }): Promise<PullRequest> {
-    try {
-      const response = await this.octokit.rest.pulls.create({
-        owner,
-        repo,
-        title: pr.title,
-        body: pr.body,
-        head: pr.head,
-        base: pr.base,
-        draft: pr.draft || false
-      });
-
-      return this.mapPullRequest(response.data);
-    } catch (error) {
-      throw new Error(`Failed to create pull request: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Create a branch for implementing acceptance criteria
-   * @param owner - Repository owner
-   * @param repo - Repository name
-   * @param branchName - Name of the new branch
-   * @param baseBranch - Base branch to create from (default: main)
-   */
-  async createBranch(owner: string, repo: string, branchName: string, baseBranch: string = 'main'): Promise<void> {
-    try {
-      // Get the SHA of the base branch
-      const { data: baseRef } = await this.octokit.rest.git.getRef({
-        owner,
-        repo,
-        ref: `heads/${baseBranch}`
-      });
-
-      // Create the new branch
-      await this.octokit.rest.git.createRef({
-        owner,
-        repo,
-        ref: `refs/heads/${branchName}`,
-        sha: baseRef.object.sha
-      });
-    } catch (error) {
-      throw new Error(`Failed to create branch ${branchName}: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Create or update a file with AC-generated code
-   * @param owner - Repository owner
-   * @param repo - Repository name
-   * @param path - File path
-   * @param content - File content
-   * @param message - Commit message
-   * @param branch - Branch name
-   */
-  async createOrUpdateFile(
-    owner: string, 
-    repo: string, 
-    path: string, 
-    content: string, 
-    message: string, 
-    branch: string
-  ): Promise<void> {
-    try {
-      // Check if file exists
-      let sha: string | undefined;
-      try {
-        const { data: existingFile } = await this.octokit.rest.repos.getContent({
-          owner,
-          repo,
-          path,
-          ref: branch
-        });
-        
-        if ('sha' in existingFile) {
-          sha = existingFile.sha;
-        }
-      } catch (error) {
-        // File doesn't exist, which is fine for creation
-      }
-
-      // Create or update file
-      await this.octokit.rest.repos.createOrUpdateFileContents({
-        owner,
-        repo,
-        path,
-        message,
-        content: Buffer.from(content).toString('base64'),
-        branch,
-        sha
-      });
-    } catch (error) {
-      throw new Error(`Failed to create/update file ${path}: ${(error as Error).message}`);
     }
   }
 
@@ -220,11 +154,11 @@ export class GitHubService {
    */
   async addComment(owner: string, repo: string, issueNumber: number, comment: string): Promise<void> {
     try {
-      await this.octokit.rest.issues.createComment({
+      await this.client.rest.issues.createComment({
         owner,
         repo,
         issue_number: issueNumber,
-        body: comment
+        body: comment,
       });
     } catch (error) {
       throw new Error(`Failed to add comment: ${(error as Error).message}`);
@@ -232,42 +166,165 @@ export class GitHubService {
   }
 
   /**
-   * Request review from specific users
+   * Monitor repository for Copilot-generated draft PRs
+   * This checks for draft PRs that may have been created by GitHub Copilot
    * @param owner - Repository owner
    * @param repo - Repository name
-   * @param prNumber - Pull request number
-   * @param reviewers - Array of GitHub usernames
+   * @param issueNumber - Related issue number to monitor
+   * @returns Promise with draft PR info if found
    */
-  async requestReview(owner: string, repo: string, prNumber: number, reviewers: string[]): Promise<void> {
+
+  /**
+   * Get detailed information about a draft PR using GraphQL for richer data
+   * Added: Better insight into PR status and Copilot involvement
+   */
+  async getDraftPRDetails({ owner, repo, prNumber }: { owner: string; repo: string; prNumber: number }): Promise<any> {
     try {
-      await this.octokit.rest.pulls.requestReviewers({
+      // Updated: Use GraphQL for more detailed PR information
+      const prDetails = await this.client.graphql(
+        `
+        query GetPullRequest($owner: String!, $repo: String!, $prNumber: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $prNumber) {
+              id
+              title
+              body
+              isDraft
+              mergeable
+              additions
+              deletions
+              changedFiles
+              commits(last: 10) {
+                nodes {
+                  commit {
+                    message
+                    author {
+                      name
+                      email
+                    }
+                    authoredDate
+                  }
+                }
+              }
+              files(first: 20) {
+                nodes {
+                  path
+                  additions
+                  deletions
+                }
+              }
+              reviews(last: 5) {
+                nodes {
+                  state
+                  author {
+                    login
+                  }
+                }
+              }
+            }
+          }
+        }
+      `,
+        {
+          owner,
+          repo,
+          prNumber,
+        },
+      );
+
+      const pr = (prDetails as any).repository.pullRequest;
+
+      console.log(`📊 Draft PR Analysis:`);
+      console.log(`   Files changed: ${pr.changedFiles}`);
+      console.log(`   Lines added: ${pr.additions}, deleted: ${pr.deletions}`);
+      console.log(`   Mergeable: ${pr.mergeable}`);
+      console.log(`   Recent commits: ${pr.commits.nodes.length}`);
+
+      return pr;
+    } catch (error) {
+      throw new Error(`Failed to get draft PR details: ${(error as Error).message}`);
+    }
+  }
+
+
+
+  /**
+   * Create or update a file with AC-generated code
+   * @param owner - Repository owner
+   * @param repo - Repository name
+   * @param path - File path
+   * @param content - File content
+   * @param message - Commit message
+   * @param branch - Branch name
+   */
+  async createOrUpdateFile(owner: string, repo: string, path: string, content: string, message: string, branch: string): Promise<void> {
+    try {
+      // Check if file exists
+      let sha: string | undefined;
+      try {
+        const { data: existingFile } = await this.client.rest.repos.getContent({
+          owner,
+          repo,
+          path,
+          ref: branch,
+        });
+
+        if ('sha' in existingFile) {
+          sha = existingFile.sha;
+        }
+      } catch (error) {
+        // File doesn't exist, which is fine for creation
+      }
+
+      // Create or update file
+      await this.client.rest.repos.createOrUpdateFileContents({
         owner,
         repo,
-        pull_number: prNumber,
-        reviewers
+        path,
+        message,
+        content: Buffer.from(content).toString('base64'),
+        branch,
+        sha,
       });
     } catch (error) {
-      throw new Error(`Failed to request review: ${(error as Error).message}`);
+      throw new Error(`Failed to create/update file ${path}: ${(error as Error).message}`);
     }
   }
 
   /**
-   * Assign users to an issue or PR
-   * @param owner - Repository owner
-   * @param repo - Repository name
-   * @param issueNumber - Issue/PR number
-   * @param assignees - Array of GitHub usernames
+   * Assign issue to Copilot (special handling since Copilot isn't a real user)
+   * Copilot can't be assigned like a regular user
    */
-  async assignUsers(owner: string, repo: string, issueNumber: number, assignees: string[]): Promise<void> {
-    try {
-      await this.octokit.rest.issues.addAssignees({
+  async assignIssueToCopilot({owner, repo, issueNumber}: {
+    owner: string,
+    repo: string,
+    issueNumber: number,
+  }): Promise<void> {
+    const copilotAgentId = await this.getCopilotAgentId(owner, repo);
+    const issueId = await this.getIssueId(owner, repo, issueNumber);
+
+    if (copilotAgentId && issueId) {
+      console.log("Copilot id", copilotAgentId, "issueId", issueId)
+      // Step 1: Add Copilot-related labels
+      await this.client.rest.issues.addLabels({
         owner,
         repo,
         issue_number: issueNumber,
-        assignees
+        labels: ['copilot-assigned', 'ai-development', 'auto-code-gen'],
       });
-    } catch (error) {
-      throw new Error(`Failed to assign users: ${(error as Error).message}`);
+
+      // Step 2: Add a comment indicating Copilot assignment
+      await this.addComment(owner, repo, issueNumber, `Issue Assigned to GitHub Copilot`);
+
+      const query = assignCopilotAgentToIssueQuery({
+        issueId: issueId,
+        assigneeIds: [copilotAgentId],
+      });
+
+      await this.client.graphql({ query });
+
+    } else {
+      console.warn(`No Copilot agent found for ${owner}/${repo}`);
     }
   }
 
@@ -278,9 +335,9 @@ export class GitHubService {
    */
   async getRepository(owner: string, repo: string): Promise<any> {
     try {
-      const response = await this.octokit.rest.repos.get({
+      const response = await this.client.rest.repos.get({
         owner,
-        repo
+        repo,
       });
       return response.data;
     } catch (error) {
@@ -290,24 +347,14 @@ export class GitHubService {
 
   private mapGitHubIssue(githubResponse: any): GitHubIssue {
     return {
+      id: githubResponse.id,
+      issue_id: githubResponse.node_id,
       number: githubResponse.number,
       title: githubResponse.title,
       body: githubResponse.body,
       state: githubResponse.state,
       labels: githubResponse.labels.map((label: any) => label.name),
-      assignees: githubResponse.assignees.map((assignee: any) => assignee.login)
-    };
-  }
-
-  private mapPullRequest(githubResponse: any): PullRequest {
-    return {
-      number: githubResponse.number,
-      title: githubResponse.title,
-      body: githubResponse.body,
-      head: githubResponse.head.ref,
-      base: githubResponse.base.ref,
-      state: githubResponse.state,
-      draft: githubResponse.draft
+      assignees: githubResponse.assignees.map((assignee: any) => assignee.login),
     };
   }
 }
