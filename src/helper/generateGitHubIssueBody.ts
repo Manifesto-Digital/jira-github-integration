@@ -1,3 +1,4 @@
+import { env } from 'process';
 import { JiraIssue } from '../jira/jira-service';
 
 export interface AcceptanceCriterion {
@@ -74,7 +75,7 @@ When implementation is complete:
 - Include test results and AC verification
 
 ## 🔗 Links
-- **Jira Ticket:** [${ticket.key}](https://your-jira-domain.atlassian.net/browse/${ticket.key})
+- **Jira Ticket:** [${ticket.key}](https://${env.JIRA_DOMAIN}/browse/${ticket.key})
 - **Priority:** ${ticket.priority || 'Not set'}
 - **Issue Type:** ${ticket.issueType || 'Unknown'}
 

@@ -7,8 +7,6 @@
     "start": "tsx src/app.ts",
     "build": "tsc",
     "test": "jest",
-    "get-ticket": "tsx scripts/get-ticket.ts",
-    "jira-to-pr": "tsx scripts/jira-to-pr.ts",
     "jira-to-issue": "tsx scripts/jira-to-github-issue.ts"
   },
   "keywords": [
